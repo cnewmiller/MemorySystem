@@ -22,7 +22,13 @@ public:
 	Type::U8	pad1;			// future use
 
 
-	void* getAbove();
+	//big four
+	UsedHdr() = delete;
+	UsedHdr(const UsedHdr&) = delete;
+	UsedHdr& operator = (const UsedHdr&) = delete;
+	~UsedHdr() = delete;
+
+	
 };
 
 #endif 

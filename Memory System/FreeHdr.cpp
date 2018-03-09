@@ -13,7 +13,7 @@
 
 // ---  End of File ---------------
 
-FreeHdr::FreeHdr():
+FreeHdr::FreeHdr() :
 	pFreeNext(nullptr),
 	pFreePrev(nullptr),
 	mBlockSize(0),
@@ -24,7 +24,7 @@ FreeHdr::FreeHdr():
 {
 }
 
-FreeHdr* FreeHdr::getEnd()
+FreeHdr* FreeHdr::getEnd() const
 {
 	FreeHdr* end = (FreeHdr*)((Type::U8*) this + mBlockSize + sizeof(FreeHdr));
 	return end;

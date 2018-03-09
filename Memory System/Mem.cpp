@@ -24,18 +24,18 @@
 #define UNUSED_VAR(v)  ((void *)v)
 
 #ifdef _DEBUG
-	#define HEAP_HEADER_GUARDS  16
-	#define HEAP_SET_GUARDS  	Type::U32 *pE = (Type::U32 *)((Type::U32)pRawMem + HEAP_SIZE); \
+#define HEAP_HEADER_GUARDS  16
+#define HEAP_SET_GUARDS  	Type::U32 *pE = (Type::U32 *)((Type::U32)pRawMem + HEAP_SIZE); \
 								*pE++ = 0xEEEEEEEE;*pE++ = 0xEEEEEEEE;*pE++ = 0xEEEEEEEE;*pE++ = 0xEEEEEEEE;
-	#define HEAP_TEST_GUARDS	Type::U32 *pE = (Type::U32 *)((Type::U32)pRawMem + HEAP_SIZE); \
+#define HEAP_TEST_GUARDS	Type::U32 *pE = (Type::U32 *)((Type::U32)pRawMem + HEAP_SIZE); \
 								assert(*pE++ == 0xEEEEEEEE);assert(*pE++ == 0xEEEEEEEE); \
 								assert(*pE++ == 0xEEEEEEEE);assert(*pE++ == 0xEEEEEEEE);  
 #else
-	#define HEAP_HEADER_GUARDS  0
-	#define HEAP_SET_GUARDS  	
-	#define HEAP_TEST_GUARDS			 
+#define HEAP_HEADER_GUARDS  0
+#define HEAP_SET_GUARDS  	
+#define HEAP_TEST_GUARDS			 
 #endif
-							
+
 
 struct SecretPtrs
 {
@@ -46,7 +46,7 @@ struct SecretPtrs
 Mem::~Mem()
 {
 	HEAP_TEST_GUARDS
-	_aligned_free(this->pRawMem);
+		_aligned_free(this->pRawMem);
 }
 
 
@@ -66,11 +66,11 @@ Mem::Mem()
 	pRawMem = _aligned_malloc(HEAP_SIZE + HEAP_HEADER_GUARDS, HEAP_ALIGNMENT);
 	HEAP_SET_GUARDS
 
-	// verify alloc worked
-	assert(pRawMem != 0);
+		// verify alloc worked
+		assert(pRawMem != 0);
 
 	// Guarantee alignemnt
-	assert( ((Type::U32)pRawMem & HEAP_ALIGNMENT_MASK) == 0x0 ); 
+	assert(((Type::U32)pRawMem & HEAP_ALIGNMENT_MASK) == 0x0);
 
 	// instantiate the heap header on the raw memory
 	Heap *p = new(pRawMem) Heap(pRawMem);
@@ -83,7 +83,8 @@ Mem::Mem()
 void Mem::Initialize()
 {
 	this->pHeap->pFreeHead = new(pHeap->mStats.heapTopAddr) FreeHdr();
-	this->pHeap->pFreeHead->mBlockSize = (Type::U32)(((Type::U8*)this->pHeap->mStats.heapBottomAddr - (Type::U8*)pHeap->pFreeHead) - sizeof(FreeHdr));
+	this->pHeap->pFreeHead->mBlockSize = (Type::U32)(((Type::U8*)this->pHeap->mStats.heapBottomAddr -
+											(Type::U8*)pHeap->pFreeHead) - sizeof(FreeHdr));
 	this->pHeap->pNextFit = this->pHeap->pFreeHead;
 
 	this->pHeap->pFreeHead->pFreeNext = 0;
@@ -95,68 +96,93 @@ void Mem::Initialize()
 
 }
 
-void Mem::changeFreeHeaderToUsed(const FreeHdr * const free) const //what the fuck am i even doing...
+void *Mem::Malloc(const Type::U32 rawsize)
 {
-
-	Heap::Stats* stats = &this->pHeap->mStats;
-	stats->currNumFreeBlocks--; //what the fuck though
-	stats->currFreeMem -= (free->mBlockSize); //so does the amount of free memory include the header???
-
-
-	if (++stats->currNumUsedBlocks > stats->peakNumUsed) {
-		stats->peakNumUsed = stats->currNumUsedBlocks;
+	Type::U32 size = rawsize;
+	//round size up to the nearest 16.
+	//This is unnecessary in our tests, but it's here because I feel it makes the function more complete
+	if ((size & 15) != 0) {
+		size = size + (16 - size % 16);
 	}
-	stats->currUsedMem += free->mBlockSize;
-	if (stats->currUsedMem > stats->peakUsedMemory) {
-		stats->peakUsedMemory = stats->currUsedMem;
-	}
-}
-
-//mBlockSize does NOT count the header size!
-//the header is NOT in the memory block, so to get to the next one you have to include the header size
-//    HHBBBBBBBB: block size 8, 10 blocks used
-void *Mem::Malloc( const Type::U32 size )
-{
-	
-	//round size up to the nearest 16
-
 	FreeHdr *tracer = pHeap->pNextFit;
-	while (tracer != nullptr) { //will need to change to != pNextFit or similar
+	//Loop 1 of 2
+	do {
 		if (tracer->mBlockSize >= size) {
 
-			tracer->mBlockType = (int)BlockType::USED;
-			pHeap->removeFree(tracer);
+			allocateOrSplitBlock(tracer, size);
 
-			unsigned int oldSize = tracer->mBlockSize;
-			tracer->mBlockSize = size;
-
-			notifyNextBlockDown(tracer, false);
-
-			createFreeBlockFromExtraSpace(oldSize, size, tracer);
-			
-			
-			pHeap->addUsed((UsedHdr*)tracer);
-
-			return tracer;
+			return tracer+1;
 		}
 		tracer = tracer->pFreeNext;
+		if (tracer == nullptr) {
+			tracer = pHeap->pFreeHead;
+		}
+
 		//if the tracer hit the end, restart at the beginning of the list
-	}
+	} while (tracer != pHeap->pNextFit);
+
+	//added as instructed
+	assert(tracer != 0);
+	
 	return nullptr;
 }
 
-void Mem::createFreeBlockFromExtraSpace(unsigned int oldSize, const unsigned int size, FreeHdr * tracer)
+void Mem::allocateOrSplitBlock(FreeHdr * tracer, const unsigned int &size)
 {
-	if (oldSize > size + sizeof(FreeHdr)) { //making a new header
+	tracer->mBlockType = (int)BlockType::USED;
+	pHeap->removeFree(tracer);
+
+	unsigned int oldSize = tracer->mBlockSize;
+	tracer->mBlockSize = size;
+
+	if (!createFreeBlockFromExtraSpace(oldSize, size, tracer)) {
+		tracer->mBlockSize = oldSize;
+	}
+
+	pHeap->addUsed((UsedHdr*)tracer);
+	notifyNextBlockDown(tracer, false);
+}
+
+bool Mem::createFreeBlockFromExtraSpace(unsigned int oldSize, const unsigned int size, FreeHdr * tracer)
+{
+	if (oldSize >= size + sizeof(FreeHdr) + sizeof(FreeHdr*)) { //making a new header
 		FreeHdr* next = tracer->getEnd();
+		next = new(next) FreeHdr();
 		next->mAboveBlockFree = false;
 		next->mBlockSize = oldSize - (size + sizeof(FreeHdr));
 		next->mBlockType = (int)BlockType::FREE;
-		//if the parent block had nextFree, this one has nextFree
 
-		pHeap->addFree(next);
-		//pHeap->mStats.currFreeMem -= sizeof(FreeHdr);
-		pHeap->pNextFit = next;
+		//if the parent block had nextFree, this one has nextFree
+		//pHeap->addFree(next);
+
+		next->pFreePrev = tracer->pFreePrev;
+		next->pFreeNext = tracer->pFreeNext;
+
+		if (this->pHeap->pFreeHead == nullptr) {
+			this->pHeap->pFreeHead = next;
+			next->pFreeNext = nullptr;
+			next->pFreePrev = nullptr;
+		}
+		else {
+			if (next->pFreePrev != nullptr) {
+				next->pFreePrev->pFreeNext = next;
+			}
+			if (next->pFreeNext != nullptr) {
+				next->pFreeNext->pFreePrev = next;
+			}
+		}
+		this->pHeap->mStats.currFreeMem += (next->mBlockSize);
+		this->pHeap->mStats.currNumFreeBlocks++;
+
+		pHeap->initSecretPtr(next);
+
+		pHeap->pNextFit = next; //this is logical, whether or not it works without it is pointless
+		return true;
+	}
+	else {
+		//this means that oldSize wasn't big enough to contain an entire block
+
+		return false;
 	}
 }
 
@@ -168,26 +194,40 @@ void Mem::notifyNextBlockDown(FreeHdr * tracer, bool newValue)
 }
 
 
-void Mem::Free( void * const data )
+void Mem::Free(void * const data)
 {
-	FreeHdr* toFree = (FreeHdr*)data;
+	FreeHdr* toFree = ((FreeHdr*)data)-1;
 
 	//if (isNextFit || nextGuy->isNextFit) nextFit = merge
 	toFree->mBlockType = (int)BlockType::FREE;
-	pHeap->removeUsed((UsedHdr*)toFree);
-	pHeap->addFree(toFree);
+
+	if (toFree->getEnd() < this->pHeap->mStats.heapBottomAddr) {
+		toFree->getEnd()->mAboveBlockFree = true;
+	}
+	this->pHeap->initSecretPtr(toFree);
 	
+	pHeap->removeUsed((UsedHdr*)toFree);
 
-	pHeap->merge(toFree);
+	if (toFree->mAboveBlockFree ||(toFree->getEnd() < this->pHeap->mStats.heapBottomAddr
+								&& toFree->getEnd()->mBlockType == (int)BlockType::FREE)) {
+		this->pHeap->mStats.currFreeMem += (toFree->mBlockSize);
+		this->pHeap->mStats.currNumFreeBlocks++;
 
-	//FreeHdr *next = toFree->getEnd();
-	//next->mAboveBlockFree = true;
-	//next--;
-
-	//if (toFree->mAboveBlockFree) {
-	//	//hello
-	//	(void)toFree;
-	//}
+		if (toFree->getEnd()->mBlockType == (int)BlockType::FREE) {
+			pHeap->mergeStretchThisBlockUp(toFree->getEnd());
+		}
+		if (toFree->mAboveBlockFree) {
+			FreeHdr *above = *((FreeHdr**)toFree - 1);
+			pHeap->mergeStretchThisBlockDown(above);
+		}
+	}
+	else {
+		//contains loop
+		pHeap->addFree(toFree);
+	}
+	
+	FreeHdr* next = toFree->getEnd();
+	if (next < this->pHeap->mStats.heapBottomAddr) next->mAboveBlockFree = true;
 
 }
 
@@ -195,44 +235,44 @@ void Mem::Free( void * const data )
 void Mem::Dump()
 {
 
-	fprintf(FileIO::GetHandle(),"\n------- DUMP -------------\n\n");
+	fprintf(FileIO::GetHandle(), "\n------- DUMP -------------\n\n");
 
-	fprintf(FileIO::GetHandle(), "heapStart: 0x%p     \n", this->pHeap );
-	fprintf(FileIO::GetHandle(), "  heapEnd: 0x%p   \n\n", this->pHeap->mStats.heapBottomAddr );
-	fprintf(FileIO::GetHandle(), "pUsedHead: 0x%p     \n", this->pHeap->pUsedHead );
-	fprintf(FileIO::GetHandle(), "pFreeHead: 0x%p     \n", this->pHeap->pFreeHead );
+	fprintf(FileIO::GetHandle(), "heapStart: 0x%p     \n", this->pHeap);
+	fprintf(FileIO::GetHandle(), "  heapEnd: 0x%p   \n\n", this->pHeap->mStats.heapBottomAddr);
+	fprintf(FileIO::GetHandle(), "pUsedHead: 0x%p     \n", this->pHeap->pUsedHead);
+	fprintf(FileIO::GetHandle(), "pFreeHead: 0x%p     \n", this->pHeap->pFreeHead);
 	fprintf(FileIO::GetHandle(), " pNextFit: 0x%p   \n\n", this->pHeap->pNextFit);
 
-	fprintf(FileIO::GetHandle(),"Heap Hdr   s: %p  e: %p                            size: 0x%x \n",(void *)((Type::U32)this->pHeap->mStats.heapTopAddr-sizeof(Heap)), this->pHeap->mStats.heapTopAddr, this->pHeap->mStats.sizeHeapHeader);
+	fprintf(FileIO::GetHandle(), "Heap Hdr   s: %p  e: %p                            size: 0x%x \n", (void *)((Type::U32)this->pHeap->mStats.heapTopAddr - sizeof(Heap)), this->pHeap->mStats.heapTopAddr, this->pHeap->mStats.sizeHeapHeader);
 
 	Type::U32 p = (Type::U32)pHeap->mStats.heapTopAddr;
 
 	char *type;
 	char *typeHdr;
 
-	while( p < (Type::U32)pHeap->mStats.heapBottomAddr )
+	while (p < (Type::U32)pHeap->mStats.heapBottomAddr)
 	{
 		UsedHdr *used = (UsedHdr *)p;
-		if( used->mBlockType == (Type::U8)BlockType::USED )
+		if (used->mBlockType == (Type::U8)BlockType::USED)
 		{
 			typeHdr = "USED HDR ";
-			type    = "USED     ";
+			type = "USED     ";
 		}
 		else
 		{
 			typeHdr = "FREE HDR ";
-			type    = "FREE     ";
+			type = "FREE     ";
 		}
 
 		Type::U32 hdrStart = (Type::U32)used;
-		Type::U32 hdrEnd   = (Type::U32)used + sizeof(UsedHdr);
-		fprintf(FileIO::GetHandle(),"%s  s: %p  e: %p  p: %p  n: %p  size: 0x%x    AF: %d \n",typeHdr, (void *)hdrStart, (void *)hdrEnd, used->pUsedPrev, used->pUsedNext, sizeof(UsedHdr), used->mAboveBlockFree );
+		Type::U32 hdrEnd = (Type::U32)used + sizeof(UsedHdr);
+		fprintf(FileIO::GetHandle(), "%s  s: %p  e: %p  p: %p  n: %p  size: 0x%x    AF: %d \n", typeHdr, (void *)hdrStart, (void *)hdrEnd, used->pUsedPrev, used->pUsedNext, sizeof(UsedHdr), used->mAboveBlockFree);
 		Type::U32 blkStart = hdrEnd;
-		Type::U32 blkEnd   = blkStart + used->mBlockSize; 
-		fprintf(FileIO::GetHandle(),"%s  s: %p  e: %p                            size: 0x%x \n",type, (void *)blkStart, (void *)blkEnd, used->mBlockSize );
+		Type::U32 blkEnd = blkStart + used->mBlockSize;
+		fprintf(FileIO::GetHandle(), "%s  s: %p  e: %p                            size: 0x%x \n", type, (void *)blkStart, (void *)blkEnd, used->mBlockSize);
 
 		p = blkEnd;
-	
+
 	}
 }
 

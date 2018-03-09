@@ -12,12 +12,4 @@
 
 // ---  End of File ---------------
 
-void * UsedHdr::getAbove()
-{
 
-	if (this->mAboveBlockFree) {
-		UsedHdr* tracer = this - 1;
-		return tracer;
-	}
-	return nullptr;
-}

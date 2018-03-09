@@ -21,7 +21,13 @@ public:
 	Type::U8	pad2;				// future use
 
 	FreeHdr();
-	FreeHdr* getEnd();
+	//big four implementation, don't need these
+	FreeHdr(const FreeHdr&) = delete;
+	FreeHdr& operator = (const FreeHdr&) = delete;
+	~FreeHdr() = delete;
+
+	FreeHdr* getEnd() const;
+	
 };
 
 #endif 

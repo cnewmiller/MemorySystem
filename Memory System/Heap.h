@@ -37,8 +37,10 @@ public:
 	void removeFree(FreeHdr*);
 	void addUsed(UsedHdr*);
 	void removeUsed(UsedHdr*);
+	void initSecretPtr(FreeHdr*);
 
-	void merge(FreeHdr*);
+	void mergeStretchThisBlockUp(FreeHdr*);
+	void mergeStretchThisBlockDown(FreeHdr*);
 
 public:
 	// Make sure that the Heap is 16 byte aligned.
@@ -56,7 +58,7 @@ public:
 	Type::U32	pad2;
 	Type::U32	pad3;
 
-	Stats		mStats;		
+	Stats		mStats;
 
 	// specialize constructor
 	Heap(void * ptr);

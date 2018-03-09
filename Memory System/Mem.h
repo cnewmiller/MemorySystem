@@ -15,25 +15,26 @@ public:
 
 
 public:
-	Mem();	
+	Mem();
 	~Mem();
 
 	Heap *GetHeap();
 	void Dump();
 
 	// implement these functions
-	void Free( void * const data );
-	void *Malloc( const Type::U32 size );
+	void Free(void * const data);
+	void *Malloc(const Type::U32 size);
 
-	void Initialize( );
+	void allocateOrSplitBlock(FreeHdr * tracer, const unsigned int &size);
+
+	void Initialize();
 
 
 private:
 	Heap	*pHeap;
 	void	*pRawMem;
 
-	void changeFreeHeaderToUsed(const FreeHdr * const) const;
-	void createFreeBlockFromExtraSpace(unsigned int oldSize, const unsigned int size, FreeHdr * tracer);
+	bool createFreeBlockFromExtraSpace(unsigned int oldSize, const unsigned int size, FreeHdr * tracer);
 	void notifyNextBlockDown(FreeHdr * tracer, bool newValue);
 
 };
